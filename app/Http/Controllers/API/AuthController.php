@@ -1,0 +1,226 @@
+<?php
+
+namespace App\Http\Controllers\API;
+
+use App\Http\Controllers\Controller;
+use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rules\Password;
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\VerificationEmail;
+use App\Mail\PasswordResetEmail;
+use App\Models\PasswordReset;
+
+class AuthController extends Controller
+{
+    public function register(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
+            'password' => ['required', 'confirmed', Password::defaults()],
+            'role' => ['required', 'string', 'in:passenger,driver'],
+            'phone' => ['required', 'string', 'max:20'],
+            'location' => ['required', 'string', 'max:255'],
+            // Driver specific validation
+            'license_number' => ['required_if:role,driver', 'string', 'max:50'],
+            'vehicle_info' => ['required_if:role,driver', 'string', 'max:255'],
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        // Generate email verification token
+        $verificationToken = Str::random(64);
+
+        $user = User::create([
+            'name' => $request->name,
+            'email' => $request->email,
+            'password' => Hash::make($request->password),
+            'role' => $request->role,
+            'phone' => $request->phone,
+            'location' => $request->location,
+            'license_number' => $request->license_number,
+            'vehicle_info' => $request->vehicle_info,
+            'joined_at' => now(),
+            'rating' => 5.0,
+            'total_rides' => 0,
+            'email_verification_token' => $verificationToken,
+        ]);
+
+        // Send verification email
+        Mail::to($user->email)->send(new VerificationEmail($verificationToken));
+
+        $token = $user->createToken('auth_token')->plainTextToken;
+
+        return response()->json([
+            'message' => 'Registration successful. Please verify your email.',
+            'user' => $user,
+            'token' => $token,
+        ], 201);
+    }
+
+    public function login(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'email' => ['required', 'string', 'email'],
+            'password' => ['required', 'string'],
+            'role' => ['required', 'string', 'in:passenger,driver'],
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $user = User::where('email', $request->email)
+                    ->where('role', $request->role)
+                    ->first();
+
+        if (!$user || !Hash::check($request->password, $user->password)) {
+            return response()->json([
+                'message' => 'Invalid credentials'
+            ], 401);
+        }
+
+        if (!$user->email_verified_at) {
+            return response()->json([
+                'message' => 'Please verify your email first'
+            ], 403);
+        }
+
+        $token = $user->createToken('auth_token')->plainTextToken;
+
+        return response()->json([
+            'message' => 'Login successful',
+            'user' => $user,
+            'token' => $token,
+        ]);
+    }
+
+    public function logout(Request $request)
+    {
+        $request->user()->currentAccessToken()->delete();
+
+        return response()->json([
+            'message' => 'Successfully logged out'
+        ]);
+    }
+
+    public function verifyEmail(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'token' => ['required', 'string'],
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $user = User::where('email_verification_token', $request->token)->first();
+
+        if (!$user) {
+            return response()->json([
+                'message' => 'Invalid verification token'
+            ], 400);
+        }
+
+        $user->email_verified_at = now();
+        $user->email_verification_token = null;
+        $user->save();
+
+        return response()->json([
+            'message' => 'Email verified successfully'
+        ]);
+    }
+
+    public function forgotPassword(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'email' => ['required', 'email', 'exists:users,email'],
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        // Generate reset token
+        $token = Str::random(64);
+
+        // Store token
+        PasswordReset::updateOrCreate(
+            ['email' => $request->email],
+            [
+                'token' => $token,
+                'created_at' => now()
+            ]
+        );
+
+        // Send reset email
+        Mail::to($request->email)->send(new PasswordResetEmail($token));
+
+        return response()->json([
+            'message' => 'Password reset link sent to your email'
+        ]);
+    }
+
+    public function resetPassword(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'token' => ['required', 'string'],
+            'email' => ['required', 'email'],
+            'password' => ['required', 'confirmed', Password::defaults()],
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $reset = PasswordReset::where([
+            'email' => $request->email,
+            'token' => $request->token,
+        ])->first();
+
+        if (!$reset) {
+            return response()->json([
+                'message' => 'Invalid reset token'
+            ], 400);
+        }
+
+        $user = User::where('email', $request->email)->first();
+        $user->password = Hash::make($request->password);
+        $user->save();
+
+        // Delete the reset token
+        PasswordReset::where('email', $request->email)->delete();
+
+        return response()->json([
+            'message' => 'Password has been reset successfully'
+        ]);
+    }
+
+    public function user(Request $request)
+    {
+        return response()->json([
+            'user' => $request->user()
+        ]);
+    }
+} 
