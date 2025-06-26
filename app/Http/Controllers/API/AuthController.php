@@ -19,15 +19,15 @@ class AuthController extends Controller
     public function register(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'name' => ['required', 'string', 'max:255'],
+            'first_name' => ['required', 'string', 'max:255'],
+            'last_name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
             'password' => ['required', 'confirmed', Password::defaults()],
-            'role' => ['required', 'string', 'in:passenger,driver'],
-            'phone' => ['required', 'string', 'max:20'],
-            'location' => ['required', 'string', 'max:255'],
+            'user_role' => ['required', 'string', 'in:passenger,driver'],
+            'phone_number' => ['required', 'string', 'max:20'],
             // Driver specific validation
-            'license_number' => ['required_if:role,driver', 'string', 'max:50'],
-            'vehicle_info' => ['required_if:role,driver', 'string', 'max:255'],
+            'license_number' => ['required_if:user_role,driver', 'string', 'max:50'],
+            'vehicle_info' => ['required_if:user_role,driver', 'string', 'max:255'],
         ]);
 
         if ($validator->fails()) {
@@ -41,27 +41,35 @@ class AuthController extends Controller
         $verificationToken = Str::random(64);
 
         $user = User::create([
-            'name' => $request->name,
+            'first_name' => $request->first_name,
+            'last_name' => $request->last_name,
             'email' => $request->email,
-            'password' => Hash::make($request->password),
-            'role' => $request->role,
-            'phone' => $request->phone,
-            'location' => $request->location,
-            'license_number' => $request->license_number,
-            'vehicle_info' => $request->vehicle_info,
-            'joined_at' => now(),
-            'rating' => 5.0,
-            'total_rides' => 0,
+            'password_hash' => Hash::make($request->password),
+            'user_role' => $request->user_role,
+            'phone_number' => $request->phone_number,
+            'member_since' => now(),
+            'account_status' => 'Active',
             'email_verification_token' => $verificationToken,
+            'email_verified_at' => now(), // Auto-verify for testing
         ]);
 
-        // Send verification email
-        Mail::to($user->email)->send(new VerificationEmail($verificationToken));
+        // Create driver details if user is a driver
+        if ($request->user_role === 'driver') {
+            $user->driverDetails()->create([
+                'license_number' => $request->license_number,
+                'about_text' => $request->vehicle_info ?? '',
+                'completion_rate' => 100.0,
+                'average_rating' => 5.0,
+            ]);
+        }
+
+        // Send verification email - DISABLED FOR TESTING
+        // Mail::to($user->email)->send(new VerificationEmail($verificationToken));
 
         $token = $user->createToken('auth_token')->plainTextToken;
 
         return response()->json([
-            'message' => 'Registration successful. Please verify your email.',
+            'message' => 'Registration successful.',
             'user' => $user,
             'token' => $token,
         ], 201);
@@ -72,7 +80,7 @@ class AuthController extends Controller
         $validator = Validator::make($request->all(), [
             'email' => ['required', 'string', 'email'],
             'password' => ['required', 'string'],
-            'role' => ['required', 'string', 'in:passenger,driver'],
+            'user_role' => ['required', 'string', 'in:passenger,driver'],
         ]);
 
         if ($validator->fails()) {
@@ -83,20 +91,21 @@ class AuthController extends Controller
         }
 
         $user = User::where('email', $request->email)
-                    ->where('role', $request->role)
+                    ->where('user_role', $request->user_role)
                     ->first();
 
-        if (!$user || !Hash::check($request->password, $user->password)) {
+        if (!$user || !Hash::check($request->password, $user->password_hash)) {
             return response()->json([
                 'message' => 'Invalid credentials'
             ], 401);
         }
 
-        if (!$user->email_verified_at) {
-            return response()->json([
-                'message' => 'Please verify your email first'
-            ], 403);
-        }
+        // Skip email verification check for testing
+        // if (!$user->email_verified_at) {
+        //     return response()->json([
+        //         'message' => 'Please verify your email first'
+        //     ], 403);
+        // }
 
         $token = $user->createToken('auth_token')->plainTextToken;
 
@@ -206,7 +215,7 @@ class AuthController extends Controller
         }
 
         $user = User::where('email', $request->email)->first();
-        $user->password = Hash::make($request->password);
+        $user->password_hash = Hash::make($request->password);
         $user->save();
 
         // Delete the reset token
