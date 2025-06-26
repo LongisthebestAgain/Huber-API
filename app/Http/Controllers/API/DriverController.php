@@ -457,4 +457,62 @@ class DriverController extends Controller
             'stats' => $stats
         ]);
     }
+
+    public function uploadDocument(Request $request)
+    {
+        $driver = $request->user();
+
+        if (!$driver->isDriver()) {
+            return response()->json([
+                'message' => 'Unauthorized. User is not a driver.'
+            ], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'document' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'], // 10MB max
+            'document_type' => ['required', 'string', 'in:license,registration,insurance,permit'],
+            'description' => ['sometimes', 'string', 'max:255'],
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            // Create directory if it doesn't exist
+            $path = $request->file('document')->store('driver-documents', 'public');
+            
+            // Save document record
+            $document = $driver->documents()->create([
+                'document_type' => $request->document_type,
+                'file_path' => $path,
+                'original_name' => $request->file('document')->getClientOriginalName(),
+                'file_size' => $request->file('document')->getSize(),
+                'mime_type' => $request->file('document')->getMimeType(),
+                'description' => $request->description,
+                'status' => 'pending_verification',
+                'uploaded_at' => now(),
+            ]);
+
+            return response()->json([
+                'message' => 'Document uploaded successfully',
+                'document' => [
+                    'id' => $document->id,
+                    'type' => $document->document_type,
+                    'status' => $document->status,
+                    'uploaded_at' => $document->uploaded_at,
+                    'file_url' => Storage::disk('public')->url($path),
+                ]
+            ], 201);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to upload document',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 } 

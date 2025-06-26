@@ -14,6 +14,7 @@ use App\Http\Controllers\API\TransactionController;
 use App\Http\Controllers\API\AchievementController;
 use App\Http\Controllers\API\ContentController;
 use App\Http\Controllers\API\DriverDetailsController;
+use App\Http\Controllers\API\RideController;
 
 /*
 |--------------------------------------------------------------------------
@@ -38,6 +39,14 @@ Route::prefix('content')->group(function () {
 // Public achievements
 Route::get('/achievements', [AchievementController::class, 'index']);
 
+// Public ride routes (for browsing without authentication)
+Route::prefix('rides')->group(function () {
+    Route::get('/', [RideController::class, 'index']);
+    Route::get('/search', [RideController::class, 'search']);
+    Route::get('/{ride}', [RideController::class, 'show']);
+    Route::get('/{ride}/seats', [RideController::class, 'getAvailableSeats']);
+});
+
 // Protected routes
 Route::middleware('auth:sanctum')->group(function () {
     // Auth routes
@@ -48,10 +57,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('users')->group(function () {
         Route::get('/profile', [UserController::class, 'getProfile']);
         Route::put('/profile', [UserController::class, 'updateProfile']);
+        Route::post('/profile/photo', [UserController::class, 'uploadProfilePhoto']);
+        Route::delete('/profile/photo', [UserController::class, 'deleteProfilePhoto']);
         Route::get('/bookings', [UserController::class, 'getBookings']);
         Route::get('/rides', [UserController::class, 'getRideHistory']);
         Route::put('/notification-preferences', [UserController::class, 'updateNotificationPreferences']);
-        Route::delete('/profile/photo', [UserController::class, 'deleteProfilePhoto']);
     });
 
     // User Preferences routes
@@ -68,6 +78,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{contact}', [EmergencyContactController::class, 'destroy']);
     });
 
+    // Authenticated ride routes
+    Route::prefix('rides')->group(function () {
+        Route::post('/{ride}/reserve', [RideController::class, 'reserveSeats']);
+    });
+
     // Driver routes
     Route::prefix('driver')->middleware('role:driver')->group(function () {
         Route::get('/profile', [DriverController::class, 'getProfile']);
@@ -79,6 +94,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/rides/{ride}/status', [DriverController::class, 'updateRideStatus']);
         Route::post('/rides', [DriverController::class, 'createRide']);
         Route::get('/stats', [DriverController::class, 'getStats']);
+        Route::post('/documents/upload', [DriverController::class, 'uploadDocument']);
     });
 
     // Driver Details routes

@@ -68,6 +68,38 @@ class UserController extends Controller
         ]);
     }
 
+    public function uploadProfilePhoto(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'photo' => ['required', 'image', 'mimes:jpeg,png,jpg,gif', 'max:5120'], // 5MB max
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $user = $request->user();
+
+        // Delete old profile photo if exists
+        if ($user->profile_photo) {
+            Storage::disk('public')->delete($user->profile_photo);
+        }
+
+        // Store new profile photo
+        $path = $request->file('photo')->store('profile-photos', 'public');
+        $user->profile_photo = $path;
+        $user->save();
+
+        return response()->json([
+            'message' => 'Profile photo uploaded successfully',
+            'photo_url' => Storage::disk('public')->url($path),
+            'user' => $user
+        ]);
+    }
+
     public function getBookings(Request $request)
     {
         $bookings = $request->user()
@@ -100,7 +132,7 @@ class UserController extends Controller
         $user = $request->user();
 
         if ($user->profile_photo) {
-            Storage::delete($user->profile_photo);
+            Storage::disk('public')->delete($user->profile_photo);
             $user->profile_photo = null;
             $user->save();
         }
