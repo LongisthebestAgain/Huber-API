@@ -232,4 +232,38 @@ class AuthController extends Controller
             'user' => $request->user()
         ]);
     }
+
+    public function changePassword(Request $request)
+    {
+        $user = $request->user();
+        $validator = Validator::make($request->all(), [
+            'old_password' => ['required', 'string'],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+        ]);
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+        if (!\Hash::check($request->old_password, $user->password_hash)) {
+            return response()->json([
+                'message' => 'Old password is incorrect.'
+            ], 400);
+        }
+        $user->password_hash = \Hash::make($request->password);
+        $user->save();
+        return response()->json([
+            'message' => 'Password changed successfully.'
+        ]);
+    }
+
+    public function deleteAccount(Request $request)
+    {
+        $user = $request->user();
+        $user->delete();
+        return response()->json([
+            'message' => 'Account deleted successfully.'
+        ]);
+    }
 } 

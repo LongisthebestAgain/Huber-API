@@ -12,7 +12,6 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->string('email_verification_token')->nullable()->after('email_verified_at');
             if (!Schema::hasColumn('users', 'date_of_birth')) {
                 $table->date('date_of_birth')->nullable()->after('location');
             }
@@ -28,7 +27,6 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn('email_verification_token');
             if (Schema::hasColumn('users', 'date_of_birth')) {
                 $table->dropColumn('date_of_birth');
             }

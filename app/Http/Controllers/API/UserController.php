@@ -30,6 +30,8 @@ class UserController extends Controller
             'name' => ['sometimes', 'string', 'max:255'],
             'phone' => ['sometimes', 'string', 'max:20'],
             'location' => ['sometimes', 'string', 'max:255'],
+            'date_of_birth' => ['sometimes', 'date'],
+            'address' => ['sometimes', 'string', 'max:255'],
             'profile_photo' => ['sometimes', 'image', 'max:5120'], // 5MB max
             // Driver specific validation
             'license_number' => ['sometimes', 'required_if:role,driver', 'string', 'max:50'],
@@ -56,6 +58,8 @@ class UserController extends Controller
             'name',
             'phone',
             'location',
+            'date_of_birth',
+            'address',
             'license_number',
             'vehicle_info',
         ]));
